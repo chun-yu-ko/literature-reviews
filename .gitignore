@@ -1,0 +1,40 @@
+# 排除不需版控的目錄
+reference/
+request/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# 環境變數
+.env
+.env.local
+
+# uv
+uv.lock
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# 輸出資料（大型檔案不上傳）
+articles/*.pdf
+texts/*.txt
+
+# 自動生成的專案資料夾（不上版控）
+projects/
+
+# Claude Code 設定
+.claude/
