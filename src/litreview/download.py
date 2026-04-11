@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 from litreview import config
-from litreview.utils import exponential_backoff, safe_resolve, save_json
+from litreview.utils import exponential_backoff, get_logger, safe_resolve, save_json
 
 console = Console()
 
@@ -40,22 +40,22 @@ def _download_pdf(client: httpx.Client, arxiv_id: str, dest: Path) -> bool:
                 return False
             dest.write_bytes(r.content)
             return True
-        except Exception:
-            pass
+        except Exception as e:
+            get_logger().debug(f"PDF 下載失敗（{arxiv_id}，{attempt+1}/4）：{e}")
     return False
 
 
 def _extract_pdf_text(pdf_path: Path) -> str:
     """用 PyMuPDF 提取 PDF 文字"""
     try:
-        doc = fitz.open(pdf_path)
-        pages = [page.get_text() for page in doc]
-        doc.close()
+        with fitz.open(pdf_path) as doc:
+            pages = [page.get_text() for page in doc]
         text = "\n".join(pages)
         if len(text) > config.TEXT_MAX_CHARS:
             text = text[:config.TEXT_MAX_CHARS] + "\n[truncated]"
         return text
-    except Exception:
+    except Exception as e:
+        get_logger().debug(f"PDF 文字提取失敗（{pdf_path.name}）：{e}")
         return ""
 
 
@@ -79,8 +79,8 @@ def _download_html_text(client: httpx.Client, arxiv_id: str) -> str:
             if len(text) > config.HTML_MAX_CHARS:
                 text = text[:config.HTML_MAX_CHARS] + "\n[truncated]"
             return text
-        except Exception:
-            pass
+        except Exception as e:
+            get_logger().debug(f"HTML 下載失敗（{arxiv_id}，{attempt+1}/3）：{e}")
     return ""
 
 
@@ -165,7 +165,17 @@ def run_download(papers: list[dict], project_dir: Path) -> list[dict]:
         with ThreadPoolExecutor(max_workers=config.ARXIV_MAX_WORKERS) as pool:
             futures = {pool.submit(_process_one, p, project_dir): p for p in papers}
             for future in as_completed(futures):
-                result = future.result()
+                try:
+                    result = future.result()
+                except Exception as e:
+                    paper = futures[future]
+                    aid = paper.get('arxiv_id', '?')
+                    get_logger().warning(
+                        f"下載處理失敗（{aid}）：{e}",
+                    )
+                    paper["content_source"] = "failed"
+                    paper["text_length"] = 0
+                    result = paper
                 updated.append(result)
                 if result["content_source"] == "failed":
                     failed.append(result["arxiv_id"])
@@ -175,8 +185,15 @@ def run_download(papers: list[dict], project_dir: Path) -> list[dict]:
     save_json(updated, project_dir / "articles_metadata.json")
 
     ok = len(updated) - len(failed)
-    console.print(f"\n[bold green]下載完成：{ok}/{len(papers)} 成功，{len(failed)} 失敗[/bold green]")
+    console.print(
+        f"\n[bold green]下載完成：{ok}/{len(papers)} 成功，"
+        f"{len(failed)} 失敗[/bold green]",
+    )
     if failed:
-        console.print(f"[yellow]失敗論文：{', '.join(failed[:10])}{'...' if len(failed) > 10 else ''}[/yellow]")
+        tail = '...' if len(failed) > 10 else ''
+        console.print(
+            f"[yellow]失敗論文：{', '.join(failed[:10])}"
+            f"{tail}[/yellow]",
+        )
 
     return updated

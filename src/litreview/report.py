@@ -63,10 +63,21 @@ REPORT_TEMPLATE = """\
 """
 
 
+def _count_high_relevance(df: pd.DataFrame) -> int:
+    scores = pd.to_numeric(
+        df["relevance_score"], errors="coerce",
+    ).fillna(0)
+    return int((scores >= 4).sum())
+
+
 def _stats_table(df_study: pd.DataFrame, df_articles: pd.DataFrame) -> str:
     cat_counts = df_articles["search_category"].value_counts().to_dict()
     total = len(df_articles)
-    ai_done = (df_study["score_source"] == "ai").sum() if "score_source" in df_study.columns else 0
+    ai_done = (
+        (df_study["score_source"] == "ai").sum()
+        if "score_source" in df_study.columns
+        else 0
+    )
 
     lines = [
         "| 項目 | 數值 |",
@@ -77,15 +88,20 @@ def _stats_table(df_study: pd.DataFrame, df_articles: pd.DataFrame) -> str:
         lines.append(f"| {cat} | {cnt} |")
     lines += [
         f"| AI 摘要完成 | {ai_done} / {total} |",
-        f"| 高相關（score≥4） | {(df_study['relevance_score'].astype(float) >= 4).sum()} |",
+        f"| 高相關（score≥4） | "
+        f"{_count_high_relevance(df_study)} |",
     ]
     return "\n".join(lines)
 
 
 def _high_rel_tables(df_study: pd.DataFrame) -> str:
     df = df_study.copy()
-    df["relevance_score"] = pd.to_numeric(df["relevance_score"], errors="coerce").fillna(0)
-    high = df[df["relevance_score"] >= 4].sort_values("relevance_score", ascending=False)
+    df["relevance_score"] = pd.to_numeric(
+        df["relevance_score"], errors="coerce",
+    ).fillna(0)
+    high = df[df["relevance_score"] >= 4].sort_values(
+        "relevance_score", ascending=False,
+    )
 
     if high.empty:
         return "_（暫無高相關文獻）_"
@@ -118,8 +134,12 @@ def _year_table(df_articles: pd.DataFrame) -> str:
 
 def _key_summaries(df_study: pd.DataFrame) -> str:
     df = df_study.copy()
-    df["relevance_score"] = pd.to_numeric(df["relevance_score"], errors="coerce").fillna(0)
-    top = df[df["score_source"] == "ai"].nlargest(10, "relevance_score")
+    df["relevance_score"] = pd.to_numeric(
+        df["relevance_score"], errors="coerce",
+    ).fillna(0)
+    top = df[df["score_source"] == "ai"].nlargest(
+        10, "relevance_score",
+    )
 
     if top.empty:
         return "_（AI 摘要尚未完成，此節待補）_"
@@ -133,7 +153,8 @@ def _key_summaries(df_study: pd.DataFrame) -> str:
 - **研究方法**：{row.get('research_method', '')}
 - **核心貢獻**：{str(row.get('key_contribution', ''))[:300]}
 - **主要發現**：{str(row.get('key_findings', ''))[:300]}
-- **相關性**（{row.get('relevance_score', 0)}）：{str(row.get('relevance_note', ''))[:150]}
+- **相關性**（{row.get('relevance_score', 0)}）：\
+{str(row.get('relevance_note', ''))[:150]}
 """
         blocks.append(block)
     return "\n---\n".join(blocks)
@@ -149,10 +170,17 @@ def _keyword_suggestions(project_dir: Path) -> str:
     text = md_path.read_text(encoding="utf-8")
     lines = text.split("\n")
     # 找到 "建議搜尋關鍵字" 到 "研究空白" 之間的內容
-    start = next((i for i, l in enumerate(lines) if "建議搜尋關鍵字" in l), None)
-    end = next((i for i, l in enumerate(lines) if "研究空白" in l and i > (start or 0)), None)
+    start = next(
+        (i for i, line in enumerate(lines) if "建議搜尋關鍵字" in line),
+        None,
+    )
+    end = next(
+        (i for i, line in enumerate(lines)
+         if "研究空白" in line and i > (start or 0)),
+        None,
+    )
 
-    if start and end:
+    if start is not None and end is not None:
         return "\n".join(lines[start:end]).strip()
     return text[:800]  # fallback: 前 800 字元
 

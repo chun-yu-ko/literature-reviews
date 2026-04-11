@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
 from litreview import config
-from litreview.utils import get_logger, save_json
+from litreview.utils import get_logger
 
 console = Console()
 
@@ -65,6 +65,11 @@ def _esummary_batch(
             r = client.get(config.PUBMED_SUMMARY_URL, params=params, timeout=30)
             if r.status_code == 200:
                 return r.json().get("result", {})
+            if r.status_code == 429:
+                wait = 5 * (attempt + 1)
+                get_logger().warning(f"PubMed esummary 429，等待 {wait}s")
+                time.sleep(wait)
+                continue
         except Exception as e:
             get_logger().warning(f"PubMed esummary 失敗：{e}")
         time.sleep(random.uniform(*config.PUBMED_DELAY))

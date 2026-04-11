@@ -40,16 +40,16 @@ def _fetch_page(
         "mailto": config.OPENALEX_MAILTO,
     }
 
-    for attempt, delay in enumerate([0, *config.OPENALEX_RETRY_DELAYS]):
-        if delay:
+    max_attempts = len(config.OPENALEX_RETRY_DELAYS) + 1
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            idx = min(attempt - 1, len(config.OPENALEX_RETRY_DELAYS) - 1)
+            delay = config.OPENALEX_RETRY_DELAYS[idx]
             time.sleep(delay)
         try:
             r = client.get(config.OPENALEX_BASE_URL, params=params, timeout=30)
             if r.status_code == 429:
-                idx = min(attempt, len(config.OPENALEX_RETRY_DELAYS) - 1)
-                wait = config.OPENALEX_RETRY_DELAYS[idx]
-                console.print(f"[yellow]429 Too Many Requests，等待 {wait}s[/yellow]")
-                time.sleep(wait)
+                console.print("[yellow]429 Too Many Requests，重試中...[/yellow]")
                 continue
             r.raise_for_status()
             data = r.json()
@@ -57,7 +57,7 @@ def _fetch_page(
             next_cursor = data.get("meta", {}).get("next_cursor")
             return results, next_cursor
         except httpx.HTTPError as e:
-            if attempt == len(config.OPENALEX_RETRY_DELAYS):
+            if attempt == max_attempts - 1:
                 raise
             console.print(f"[red]HTTP error: {e}，重試中...[/red]")
 
@@ -81,7 +81,10 @@ def _parse_openalex_paper(raw: dict, category: str, query: str) -> dict | None:
     ]))
     year = raw.get("publication_year") or 0
     primary_topic = (raw.get("primary_topic") or {}).get("display_name", "")
-    field = ((raw.get("primary_topic") or {}).get("field") or {}).get("display_name", "")
+    field = (
+        ((raw.get("primary_topic") or {}).get("field") or {})
+        .get("display_name", "")
+    )
 
     return {
         "arxiv_id": arxiv_id,
@@ -115,13 +118,16 @@ def _search_one_category(
     """執行單一類別的所有查詢，回傳去重後的論文列表"""
     seen: dict[str, dict] = {}
 
-    for query, max_results in track(queries, description=f"[cyan]搜尋 {category}[/cyan]"):
+    desc = f"[cyan]搜尋 {category}[/cyan]"
+    for query, max_results in track(queries, description=desc):
         collected = 0
         cursor = "*"
 
         while collected < max_results:
             remain = max_results - collected
-            raw_results, next_cursor = _fetch_page(client, query, category, remain, cursor)
+            raw_results, next_cursor = _fetch_page(
+                client, query, category, remain, cursor,
+            )
 
             for raw in raw_results:
                 paper = _parse_openalex_paper(raw, category, query)
@@ -130,10 +136,10 @@ def _search_one_category(
                 aid = paper["arxiv_id"]
                 if aid not in seen:
                     seen[aid] = paper
+                    collected += 1
                 else:
                     if category not in seen[aid]["all_categories"]:
                         seen[aid]["all_categories"].append(category)
-                collected += 1
 
             time.sleep(config.OPENALEX_REQUEST_DELAY)
             if not next_cursor or len(raw_results) == 0:
@@ -164,7 +170,9 @@ def _search_free_topic(
 
         while collected < max_results:
             remain = max_results - collected
-            raw_results, next_cursor = _fetch_page(client, topic, category, remain, cursor)
+            raw_results, next_cursor = _fetch_page(
+                client, topic, category, remain, cursor,
+            )
 
             for raw in raw_results:
                 paper = _parse_openalex_paper(raw, category, topic)
@@ -246,7 +254,11 @@ def run_search(
                     }
                     for future in as_completed(futures):
                         cat = futures[future]
-                        papers = future.result()
+                        try:
+                            papers = future.result()
+                        except Exception as e:
+                            logger.warning(f"類別 {cat} 搜尋失敗：{e}")
+                            continue
                         _merge(papers)
                         console.print(
                             f"[green]類別 {cat}：{len(papers)} 篇"

@@ -1,5 +1,6 @@
 """CLI 入口：litreview 指令"""
 
+import json
 import os
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from litreview import config
 from litreview.utils import make_project_dir, setup_logging
 
 console = Console()
-ROOT_DIR = Path(__file__).parent.parent.parent
+ROOT_DIR = Path.cwd()
 
 
 def _apply_config_overrides(**overrides: object) -> None:
@@ -53,7 +54,10 @@ def main():
     show_default=True,
     help="搜尋來源：arxiv | pubmed | all（逗號分隔可多選，如 arxiv,pubmed）",
 )
-@click.option("--max-results", default=200, show_default=True, help="每個查詢最多取得篇數")
+@click.option(
+    "--max-results", default=200, show_default=True,
+    help="每個查詢最多取得篇數",
+)
 @click.option("--skip-download", is_flag=True, help="跳過 Phase 2 下載（只搜尋）")
 @click.option("--skip-summarize", is_flag=True, help="跳過 Phase 3 AI 摘要")
 @click.option("--suggest", is_flag=True, help="執行 Phase 3.5 延伸關鍵字建議")
@@ -130,7 +134,6 @@ def run(
     from litreview.download import run_download
     from litreview.report import run_report
     from litreview.search import run_search
-    from litreview.utils import load_json
 
     # Security: warn if API keys passed via CLI
     if api_key:
@@ -168,7 +171,10 @@ def run(
 
     # 設定 logging（寫入 run.log）
     logger = setup_logging(project_dir)
-    logger.info(f"litreview run 開始：topic={topic}, source={source}, categories={categories}")
+    logger.info(
+        f"litreview run 開始：topic={topic}, "
+        f"source={source}, categories={categories}",
+    )
 
     console.print(Panel(
         f"[bold cyan]專案目錄：{project_dir}[/bold cyan]\n"
@@ -276,7 +282,7 @@ def summarize(
     text_max_chars: int | None,
 ):
     """對已下載的論文補跑 Phase 3 AI 摘要"""
-    from litreview.summarize import load_all_summaries, run_summarize
+    from litreview.summarize import run_summarize
     from litreview.utils import load_json
 
     _apply_config_overrides(
@@ -324,7 +330,6 @@ def list_projects():
             meta = d / "articles_metadata.json"
             count = ""
             if meta.exists():
-                import json
                 try:
                     data = json.loads(meta.read_text("utf-8"))
                     count = f" [{len(data)} 篇]"
