@@ -8,13 +8,7 @@ import httpx
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
-from litreview.config import (
-    PUBMED_DELAY,
-    PUBMED_FETCH_URL,
-    PUBMED_MAX_RESULTS,
-    PUBMED_SEARCH_URL,
-    PUBMED_SUMMARY_URL,
-)
+from litreview import config
 from litreview.utils import get_logger, save_json
 
 console = Console()
@@ -39,7 +33,7 @@ def _esearch(
 
     for attempt in range(3):
         try:
-            r = client.get(PUBMED_SEARCH_URL, params=params, timeout=30)
+            r = client.get(config.PUBMED_SEARCH_URL, params=params, timeout=30)
             if r.status_code == 200:
                 data = r.json()
                 return data.get("esearchresult", {}).get("idlist", [])
@@ -48,7 +42,7 @@ def _esearch(
                 continue
         except Exception as e:
             get_logger().warning(f"PubMed esearch 失敗（{attempt+1}/3）：{e}")
-        time.sleep(random.uniform(*PUBMED_DELAY))
+        time.sleep(random.uniform(*config.PUBMED_DELAY))
     return []
 
 
@@ -68,12 +62,12 @@ def _esummary_batch(
 
     for attempt in range(3):
         try:
-            r = client.get(PUBMED_SUMMARY_URL, params=params, timeout=30)
+            r = client.get(config.PUBMED_SUMMARY_URL, params=params, timeout=30)
             if r.status_code == 200:
                 return r.json().get("result", {})
         except Exception as e:
             get_logger().warning(f"PubMed esummary 失敗：{e}")
-        time.sleep(random.uniform(*PUBMED_DELAY))
+        time.sleep(random.uniform(*config.PUBMED_DELAY))
     return {}
 
 
@@ -93,7 +87,7 @@ def _efetch_abstract(
         params["api_key"] = api_key
 
     try:
-        r = client.get(PUBMED_FETCH_URL, params=params, timeout=30)
+        r = client.get(config.PUBMED_FETCH_URL, params=params, timeout=30)
         if r.status_code == 200:
             return r.text.strip()
     except Exception:
@@ -154,7 +148,7 @@ def _parse_doc(pmid: str, doc: dict, query: str) -> dict | None:
 def search_pubmed(
     query: str,
     project_dir: Path,
-    max_results: int = PUBMED_MAX_RESULTS,
+    max_results: int = config.PUBMED_MAX_RESULTS,
     ncbi_api_key: str | None = None,
 ) -> list[dict]:
     """
@@ -181,7 +175,7 @@ def search_pubmed(
         batch_size = 200
         for i in range(0, len(pmids), batch_size):
             batch = pmids[i : i + batch_size]
-            time.sleep(random.uniform(*PUBMED_DELAY))
+            time.sleep(random.uniform(*config.PUBMED_DELAY))
             docs = _esummary_batch(client, batch, ncbi_api_key)
             all_docs.update(docs)
 
@@ -212,7 +206,7 @@ def search_pubmed(
                 txt_path = project_dir / paper["text_path"]
 
                 if not txt_path.exists():
-                    time.sleep(random.uniform(*PUBMED_DELAY))
+                    time.sleep(random.uniform(*config.PUBMED_DELAY))
                     abstract = _efetch_abstract(client, pmid, ncbi_api_key)
                     if abstract:
                         txt_path.write_text(abstract, encoding="utf-8")

@@ -11,20 +11,7 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
-from litreview.config import (
-    ARXIV_DOWNLOAD_DELAY,
-    ARXIV_HTML_TIMEOUT,
-    ARXIV_HTML_URL,
-    ARXIV_MAX_WORKERS,
-    ARXIV_PDF_TIMEOUT,
-    ARXIV_PDF_URL,
-    ARXIV_RETRY_BASE,
-    ARXIV_RETRY_MAX,
-    HTML_MAX_CHARS,
-    TEXT_CACHE_MIN_SIZE,
-    TEXT_MAX_CHARS,
-    TEXT_MIN_VALID_CHARS,
-)
+from litreview import config
 from litreview.utils import exponential_backoff, safe_resolve, save_json
 
 console = Console()
@@ -32,15 +19,19 @@ console = Console()
 
 def _download_pdf(client: httpx.Client, arxiv_id: str, dest: Path) -> bool:
     """下載 PDF，失敗時回傳 False"""
-    url = ARXIV_PDF_URL.format(arxiv_id=arxiv_id)
+    url = config.ARXIV_PDF_URL.format(arxiv_id=arxiv_id)
     for attempt in range(4):
         if attempt > 0:
-            wait = exponential_backoff(attempt - 1, ARXIV_RETRY_BASE, ARXIV_RETRY_MAX)
+            wait = exponential_backoff(
+                attempt - 1, config.ARXIV_RETRY_BASE, config.ARXIV_RETRY_MAX,
+            )
             time.sleep(wait)
         try:
-            r = client.get(url, timeout=ARXIV_PDF_TIMEOUT, follow_redirects=True)
+            r = client.get(url, timeout=config.ARXIV_PDF_TIMEOUT, follow_redirects=True)
             if r.status_code == 429:
-                wait = exponential_backoff(attempt, ARXIV_RETRY_BASE, ARXIV_RETRY_MAX)
+                wait = exponential_backoff(
+                    attempt, config.ARXIV_RETRY_BASE, config.ARXIV_RETRY_MAX,
+                )
                 time.sleep(wait)
                 continue
             if r.status_code != 200:
@@ -61,8 +52,8 @@ def _extract_pdf_text(pdf_path: Path) -> str:
         pages = [page.get_text() for page in doc]
         doc.close()
         text = "\n".join(pages)
-        if len(text) > TEXT_MAX_CHARS:
-            text = text[:TEXT_MAX_CHARS] + "\n[truncated]"
+        if len(text) > config.TEXT_MAX_CHARS:
+            text = text[:config.TEXT_MAX_CHARS] + "\n[truncated]"
         return text
     except Exception:
         return ""
@@ -70,12 +61,14 @@ def _extract_pdf_text(pdf_path: Path) -> str:
 
 def _download_html_text(client: httpx.Client, arxiv_id: str) -> str:
     """下載 arXiv HTML 並提取文字（備選方案，修正：上限與 PDF 相同）"""
-    url = ARXIV_HTML_URL.format(arxiv_id=arxiv_id)
+    url = config.ARXIV_HTML_URL.format(arxiv_id=arxiv_id)
     for attempt in range(3):
         if attempt > 0:
             time.sleep(exponential_backoff(attempt - 1, 3.0, 60.0))
         try:
-            r = client.get(url, timeout=ARXIV_HTML_TIMEOUT, follow_redirects=True)
+            r = client.get(
+                url, timeout=config.ARXIV_HTML_TIMEOUT, follow_redirects=True,
+            )
             if r.status_code != 200:
                 return ""
             soup = BeautifulSoup(r.text, "lxml")
@@ -83,8 +76,8 @@ def _download_html_text(client: httpx.Client, arxiv_id: str) -> str:
             for tag in soup(["script", "style", "nav", "footer"]):
                 tag.decompose()
             text = soup.get_text(separator="\n", strip=True)
-            if len(text) > HTML_MAX_CHARS:
-                text = text[:HTML_MAX_CHARS] + "\n[truncated]"
+            if len(text) > config.HTML_MAX_CHARS:
+                text = text[:config.HTML_MAX_CHARS] + "\n[truncated]"
             return text
         except Exception:
             pass
@@ -112,13 +105,13 @@ def _process_one(paper: dict, project_dir: Path) -> dict:
         return paper
 
     # 快取命中：略過已完成的論文
-    if txt_path.exists() and txt_path.stat().st_size > TEXT_CACHE_MIN_SIZE:
+    if txt_path.exists() and txt_path.stat().st_size > config.TEXT_CACHE_MIN_SIZE:
         paper["content_source"] = "cached"
         paper["text_length"] = txt_path.stat().st_size
         return paper
 
     # 隨機延遲（修正：避免同時發送大量請求）
-    time.sleep(random.uniform(*ARXIV_DOWNLOAD_DELAY))
+    time.sleep(random.uniform(*config.ARXIV_DOWNLOAD_DELAY))
 
     with httpx.Client(
         headers={"User-Agent": "LiteratureReview/1.0 (academic research)"},
@@ -131,11 +124,11 @@ def _process_one(paper: dict, project_dir: Path) -> dict:
 
         if pdf_ok:
             text = _extract_pdf_text(pdf_path)
-            if len(text) >= TEXT_MIN_VALID_CHARS:
+            if len(text) >= config.TEXT_MIN_VALID_CHARS:
                 source = "pdf"
 
         # PDF 不足時嘗試 HTML
-        if len(text) < TEXT_MIN_VALID_CHARS:
+        if len(text) < config.TEXT_MIN_VALID_CHARS:
             html_text = _download_html_text(client, arxiv_id)
             if len(html_text) > len(text):
                 text = html_text
@@ -169,7 +162,7 @@ def run_download(papers: list[dict], project_dir: Path) -> list[dict]:
     ) as progress:
         task = progress.add_task("[cyan]下載論文...", total=len(papers))
 
-        with ThreadPoolExecutor(max_workers=ARXIV_MAX_WORKERS) as pool:
+        with ThreadPoolExecutor(max_workers=config.ARXIV_MAX_WORKERS) as pool:
             futures = {pool.submit(_process_one, p, project_dir): p for p in papers}
             for future in as_completed(futures):
                 result = future.result()

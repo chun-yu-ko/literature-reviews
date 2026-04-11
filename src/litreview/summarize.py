@@ -9,8 +9,13 @@ import anthropic
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 
-from litreview.config import SUMMARIES_SUBDIR, SUMMARIZE_MAX_WORKERS, TEXT_MAX_CHARS
-from litreview.utils import auto_relevance_score, classify_research_method, get_logger, save_json
+from litreview import config
+from litreview.utils import (
+    auto_relevance_score,
+    classify_research_method,
+    get_logger,
+    save_json,
+)
 
 console = Console()
 
@@ -73,7 +78,7 @@ def _call_claude(
         title=paper.get("title", ""),
         category=paper.get("search_category", ""),
         year=paper.get("year", 0),
-        text=text[:TEXT_MAX_CHARS],
+        text=text[:config.TEXT_MAX_CHARS],
     )
 
     for attempt in range(3):
@@ -178,7 +183,7 @@ def run_summarize(
         return []
 
     logger = get_logger()
-    summaries_dir = project_dir / SUMMARIES_SUBDIR
+    summaries_dir = project_dir / config.SUMMARIES_SUBDIR
     summaries_dir.mkdir(exist_ok=True)
 
     client = anthropic.Anthropic(api_key=key)
@@ -216,7 +221,7 @@ def run_summarize(
     ) as progress:
         task = progress.add_task("[cyan]AI 摘要中...", total=len(to_process))
 
-        with ThreadPoolExecutor(max_workers=SUMMARIZE_MAX_WORKERS) as pool:
+        with ThreadPoolExecutor(max_workers=config.SUMMARIZE_MAX_WORKERS) as pool:
             futures = {
                 pool.submit(
                     _process_one_paper,
@@ -244,7 +249,7 @@ def run_summarize(
 
 def load_all_summaries(project_dir: Path) -> dict[str, dict]:
     """載入所有已完成的 summaries/{arxiv_id}.json"""
-    summaries_dir = project_dir / SUMMARIES_SUBDIR
+    summaries_dir = project_dir / config.SUMMARIES_SUBDIR
     result = {}
     if summaries_dir.exists():
         for f in summaries_dir.glob("*.json"):

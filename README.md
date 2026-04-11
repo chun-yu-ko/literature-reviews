@@ -23,8 +23,13 @@ litreview run "transformer architecture" --suggest
 # PubMed 搜尋（可加 NCBI API Key 提高速率）
 litreview run "collagen supplement" --source pubmed --ncbi-api-key $NCBI_KEY
 
-# 補跑摘要 / 重建報告
-litreview summarize projects/20260405_causal_inference/
+# 覆寫設定參數
+litreview run "AI safety" --download-workers 4 --batch-size 100
+litreview run "NLP" --pdf-timeout 120 --text-max-chars 200000
+litreview run "ML" --output-dir /tmp/my_reviews --search-workers 4
+
+# 補跑摘要（可覆寫設定） / 重建報告
+litreview summarize projects/20260405_causal_inference/ --summarize-workers 4
 litreview build projects/20260405_causal_inference/
 litreview list-projects
 ```
@@ -62,6 +67,22 @@ projects/20260405_causal_inference/
 | `arxiv`（預設） | OpenAlex API，篩選 open access arXiv 論文 |
 | `pubmed` | NCBI E-utilities，取得摘要作為全文替代 |
 | `arxiv,pubmed` | 同時搜尋兩個來源並去重 |
+
+## CLI 設定覆寫參數
+
+所有設定參數皆可透過命令列選項覆寫，無需修改 `config.py`：
+
+| 選項 | 適用指令 | 說明 |
+|------|----------|------|
+| `--output-dir` | `run` | 專案輸出基礎目錄（預設：程式根目錄） |
+| `--batch-size` | `run` | 分批儲存筆數 |
+| `--download-workers` | `run` | PDF 下載並行 worker 數 |
+| `--summarize-workers` | `run`, `summarize` | AI 摘要並行 worker 數 |
+| `--search-workers` | `run` | 搜尋並行 worker 數 |
+| `--openalex-mailto` | `run` | OpenAlex API mailto 參數 |
+| `--pdf-timeout` | `run` | PDF 下載逾時秒數 |
+| `--html-timeout` | `run` | HTML 下載逾時秒數 |
+| `--text-max-chars` | `run`, `summarize` | 全文截斷上限字元數 |
 
 ## 環境變數
 
