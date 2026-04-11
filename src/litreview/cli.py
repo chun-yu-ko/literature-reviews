@@ -33,7 +33,7 @@ def _apply_config_overrides(**overrides: object) -> None:
             setattr(config, config_attr, value)
             applied.append(f"{config_attr}={value}")
     if applied:
-        console.print(f"[dim]Config overrides: {', '.join(applied)}[/dim]")
+        console.print(f"[dim]設定覆寫：{', '.join(applied)}[/dim]")
 
 
 @click.group()
