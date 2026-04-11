@@ -8,15 +8,7 @@ import httpx
 from rich.console import Console
 from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, track
 
-from litreview.config import (
-    OPENALEX_BASE_URL,
-    OPENALEX_MAILTO,
-    OPENALEX_MAX_PER_PAGE,
-    OPENALEX_REQUEST_DELAY,
-    OPENALEX_RETRY_DELAYS,
-    SEARCH_MAX_WORKERS,
-    SEARCH_QUERIES,
-)
+from litreview import config
 from litreview.utils import extract_arxiv_id, get_logger, save_json
 
 console = Console()
@@ -34,7 +26,7 @@ def _fetch_page(
     cursor: str = "*",
 ) -> tuple[list[dict], str | None]:
     """取得單頁 OpenAlex 搜尋結果。回傳 (papers, next_cursor)。"""
-    per_page = min(max_results, OPENALEX_MAX_PER_PAGE)
+    per_page = min(max_results, config.OPENALEX_MAX_PER_PAGE)
     params = {
         "search": query,
         "filter": "from_publication_date:2016-01-01,open_access.is_oa:true",
@@ -45,16 +37,17 @@ def _fetch_page(
             "doi", "locations", "primary_topic", "cited_by_count",
         ]),
         "sort": "relevance_score:desc",
-        "mailto": OPENALEX_MAILTO,
+        "mailto": config.OPENALEX_MAILTO,
     }
 
-    for attempt, delay in enumerate([0, *OPENALEX_RETRY_DELAYS]):
+    for attempt, delay in enumerate([0, *config.OPENALEX_RETRY_DELAYS]):
         if delay:
             time.sleep(delay)
         try:
-            r = client.get(OPENALEX_BASE_URL, params=params, timeout=30)
+            r = client.get(config.OPENALEX_BASE_URL, params=params, timeout=30)
             if r.status_code == 429:
-                wait = OPENALEX_RETRY_DELAYS[min(attempt, len(OPENALEX_RETRY_DELAYS) - 1)]
+                idx = min(attempt, len(config.OPENALEX_RETRY_DELAYS) - 1)
+                wait = config.OPENALEX_RETRY_DELAYS[idx]
                 console.print(f"[yellow]429 Too Many Requests，等待 {wait}s[/yellow]")
                 time.sleep(wait)
                 continue
@@ -64,7 +57,7 @@ def _fetch_page(
             next_cursor = data.get("meta", {}).get("next_cursor")
             return results, next_cursor
         except httpx.HTTPError as e:
-            if attempt == len(OPENALEX_RETRY_DELAYS):
+            if attempt == len(config.OPENALEX_RETRY_DELAYS):
                 raise
             console.print(f"[red]HTTP error: {e}，重試中...[/red]")
 
@@ -142,7 +135,7 @@ def _search_one_category(
                         seen[aid]["all_categories"].append(category)
                 collected += 1
 
-            time.sleep(OPENALEX_REQUEST_DELAY)
+            time.sleep(config.OPENALEX_REQUEST_DELAY)
             if not next_cursor or len(raw_results) == 0:
                 break
             cursor = next_cursor
@@ -182,7 +175,7 @@ def _search_free_topic(
                     collected += 1
                     progress.advance(task)
 
-            time.sleep(OPENALEX_REQUEST_DELAY)
+            time.sleep(config.OPENALEX_REQUEST_DELAY)
             if not next_cursor or len(raw_results) == 0:
                 break
             cursor = next_cursor
@@ -230,21 +223,23 @@ def run_search(
     # ── OpenAlex / arXiv ──
     if "arxiv" in sources or "all" in sources:
         with httpx.Client(
-            headers={"User-Agent": f"LiteratureReview/1.0 (mailto:{OPENALEX_MAILTO})"}
+            headers={
+                "User-Agent": f"LiteratureReview/1.0 (mailto:{config.OPENALEX_MAILTO})",
+            }
         ) as client:
             if categories:
                 # 並行多類別搜尋
-                cats_to_search = [c for c in categories if c in SEARCH_QUERIES]
-                unknown = [c for c in categories if c not in SEARCH_QUERIES]
+                cats_to_search = [c for c in categories if c in config.SEARCH_QUERIES]
+                unknown = [c for c in categories if c not in config.SEARCH_QUERIES]
                 if unknown:
                     console.print(f"[yellow]未知類別（跳過）：{unknown}[/yellow]")
 
-                with ThreadPoolExecutor(max_workers=SEARCH_MAX_WORKERS) as pool:
+                with ThreadPoolExecutor(max_workers=config.SEARCH_MAX_WORKERS) as pool:
                     futures = {
                         pool.submit(
                             _search_one_category,
                             cat,
-                            SEARCH_QUERIES[cat],
+                            config.SEARCH_QUERIES[cat],
                             client,
                         ): cat
                         for cat in cats_to_search
@@ -294,8 +289,6 @@ def run_search(
 
 def _save_batches(papers: list[dict], project_dir: Path) -> None:
     """依來源類別分批儲存 batch_{n}.json"""
-    from litreview.config import BATCH_SIZE
-
     # 依 search_category 分組，保持穩定順序
     by_cat: dict[str, list] = {}
     for p in papers:
@@ -311,8 +304,9 @@ def _save_batches(papers: list[dict], project_dir: Path) -> None:
         ordered.extend(ps)
 
     batch_n = 0
-    for i in range(0, len(ordered), BATCH_SIZE):
-        save_json(ordered[i : i + BATCH_SIZE], project_dir / f"batch_{batch_n}.json")
+    for i in range(0, len(ordered), config.BATCH_SIZE):
+        batch = ordered[i : i + config.BATCH_SIZE]
+        save_json(batch, project_dir / f"batch_{batch_n}.json")
         batch_n += 1
 
-    console.print(f"[dim]已分成 {batch_n} 批（每批 ≤{BATCH_SIZE} 筆）[/dim]")
+    console.print(f"[dim]已分成 {batch_n} 批（每批 ≤{config.BATCH_SIZE} 筆）[/dim]")

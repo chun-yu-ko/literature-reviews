@@ -7,10 +7,33 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
+from litreview import config
 from litreview.utils import make_project_dir, setup_logging
 
 console = Console()
 ROOT_DIR = Path(__file__).parent.parent.parent
+
+
+def _apply_config_overrides(**overrides: object) -> None:
+    """將 CLI 傳入的非 None 值寫入 config 模組，覆蓋預設值。"""
+    mapping: dict[str, str] = {
+        "batch_size": "BATCH_SIZE",
+        "download_workers": "ARXIV_MAX_WORKERS",
+        "summarize_workers": "SUMMARIZE_MAX_WORKERS",
+        "search_workers": "SEARCH_MAX_WORKERS",
+        "openalex_mailto": "OPENALEX_MAILTO",
+        "pdf_timeout": "ARXIV_PDF_TIMEOUT",
+        "html_timeout": "ARXIV_HTML_TIMEOUT",
+        "text_max_chars": "TEXT_MAX_CHARS",
+    }
+    applied: list[str] = []
+    for cli_name, config_attr in mapping.items():
+        value = overrides.get(cli_name)
+        if value is not None:
+            setattr(config, config_attr, value)
+            applied.append(f"{config_attr}={value}")
+    if applied:
+        console.print(f"[dim]Config overrides: {', '.join(applied)}[/dim]")
 
 
 @click.group()
@@ -36,16 +59,61 @@ def main():
 @click.option("--suggest", is_flag=True, help="執行 Phase 3.5 延伸關鍵字建議")
 @click.option("--api-key", default=None, envvar="ANTHROPIC_API_KEY", help="Claude API Key")
 @click.option("--ncbi-api-key", default=None, envvar="NCBI_API_KEY", help="NCBI API Key（提高 PubMed 速率限制）")
+@click.option(
+    "--output-dir", type=click.Path(path_type=Path),
+    default=None, help="專案輸出基礎目錄（預設：程式根目錄）",
+)
+@click.option(
+    "--batch-size", type=int, default=None,
+    help=f"分批儲存筆數（預設：{config.BATCH_SIZE}）",
+)
+@click.option(
+    "--download-workers", type=int, default=None,
+    help=f"PDF 下載並行 worker 數（預設：{config.ARXIV_MAX_WORKERS}）",
+)
+@click.option(
+    "--summarize-workers", type=int, default=None,
+    help=f"AI 摘要並行 worker 數（預設：{config.SUMMARIZE_MAX_WORKERS}）",
+)
+@click.option(
+    "--search-workers", type=int, default=None,
+    help=f"搜尋並行 worker 數（預設：{config.SEARCH_MAX_WORKERS}）",
+)
+@click.option(
+    "--openalex-mailto", default=None,
+    help="OpenAlex API mailto 參數",
+)
+@click.option(
+    "--pdf-timeout", type=int, default=None,
+    help=f"PDF 下載逾時秒數（預設：{config.ARXIV_PDF_TIMEOUT}）",
+)
+@click.option(
+    "--html-timeout", type=int, default=None,
+    help=f"HTML 下載逾時秒數（預設：{config.ARXIV_HTML_TIMEOUT}）",
+)
+@click.option(
+    "--text-max-chars", type=int, default=None,
+    help=f"全文截斷上限字元數（預設：{config.TEXT_MAX_CHARS}）",
+)
 def run(
     topic: str,
-    categories: str,
+    categories: str | None,
     source: str,
     max_results: int,
     skip_download: bool,
     skip_summarize: bool,
     suggest: bool,
-    api_key: str,
-    ncbi_api_key: str,
+    api_key: str | None,
+    ncbi_api_key: str | None,
+    output_dir: Path | None,
+    batch_size: int | None,
+    download_workers: int | None,
+    summarize_workers: int | None,
+    search_workers: int | None,
+    openalex_mailto: str | None,
+    pdf_timeout: int | None,
+    html_timeout: int | None,
+    text_max_chars: int | None,
 ):
     """
     執行完整文獻回顧流程，並自動建立新專案目錄。
@@ -56,6 +124,7 @@ def run(
       litreview run "Causal Inference" --source arxiv,pubmed --suggest
       litreview run bert_finetune --categories LLM --skip-summarize
       litreview run "drug discovery" --source pubmed --ncbi-api-key $NCBI_KEY
+      litreview run "AI safety" --download-workers 4 --batch-size 100
     """
     from litreview.build_csv import run_build_csv
     from litreview.download import run_download
@@ -63,8 +132,8 @@ def run(
     from litreview.search import run_search
     from litreview.utils import load_json
 
-    # Security: warn if API keys passed via CLI (visible in process listings)
-    if api_key and api_key == click.get_current_context().params.get("api_key"):
+    # Security: warn if API keys passed via CLI
+    if api_key:
         import sys
         if "--api-key" in sys.argv:
             console.print(
@@ -81,8 +150,21 @@ def run(
                 "Prefer: export NCBI_API_KEY=...",
             )
 
+    # 套用 config 覆寫
+    _apply_config_overrides(
+        batch_size=batch_size,
+        download_workers=download_workers,
+        summarize_workers=summarize_workers,
+        search_workers=search_workers,
+        openalex_mailto=openalex_mailto,
+        pdf_timeout=pdf_timeout,
+        html_timeout=html_timeout,
+        text_max_chars=text_max_chars,
+    )
+
     # 建立專案目錄
-    project_dir = make_project_dir(topic, ROOT_DIR)
+    base_dir = output_dir if output_dir is not None else ROOT_DIR
+    project_dir = make_project_dir(topic, base_dir)
 
     # 設定 logging（寫入 run.log）
     logger = setup_logging(project_dir)
@@ -177,11 +259,30 @@ def _run_suggest(papers, summaries, topic, project_dir, api_key):
 @click.option("--api-key", default=None, envvar="ANTHROPIC_API_KEY")
 @click.option("--topic", default="", help="研究主題（用於摘要上下文）")
 @click.option("--suggest", is_flag=True, help="摘要完成後執行關鍵字建議")
-def summarize(project_dir: Path, api_key: str, topic: str, suggest: bool):
+@click.option(
+    "--summarize-workers", type=int, default=None,
+    help=f"AI 摘要並行 worker 數（預設：{config.SUMMARIZE_MAX_WORKERS}）",
+)
+@click.option(
+    "--text-max-chars", type=int, default=None,
+    help=f"全文截斷上限字元數（預設：{config.TEXT_MAX_CHARS}）",
+)
+def summarize(
+    project_dir: Path,
+    api_key: str | None,
+    topic: str,
+    suggest: bool,
+    summarize_workers: int | None,
+    text_max_chars: int | None,
+):
     """對已下載的論文補跑 Phase 3 AI 摘要"""
     from litreview.summarize import load_all_summaries, run_summarize
     from litreview.utils import load_json
 
+    _apply_config_overrides(
+        summarize_workers=summarize_workers,
+        text_max_chars=text_max_chars,
+    )
     setup_logging(project_dir)
     meta_path = project_dir / "articles_metadata.json"
     if not meta_path.exists():
