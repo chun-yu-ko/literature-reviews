@@ -4,12 +4,6 @@ version = "0.1.0"
 description = "文獻回顧自動化工具 — 支援 arXiv / PubMed 多來源搜尋"
 readme = "README.md"
 requires-python = ">=3.12"
-
-[project.scripts]
-litreview = "litreview.cli:main"
-
-[tool.ruff.lint]
-select = ["E", "F", "I"]
 dependencies = [
     "anthropic>=0.89.0",
     "beautifulsoup4>=4.14.3",
@@ -22,3 +16,9 @@ dependencies = [
     "rich>=14.3.3",
     "tqdm>=4.67.3",
 ]
+
+[project.scripts]
+litreview = "litreview.cli:main"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

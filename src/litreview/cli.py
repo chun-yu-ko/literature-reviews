@@ -63,6 +63,24 @@ def run(
     from litreview.search import run_search
     from litreview.utils import load_json
 
+    # Security: warn if API keys passed via CLI (visible in process listings)
+    if api_key and api_key == click.get_current_context().params.get("api_key"):
+        import sys
+        if "--api-key" in sys.argv:
+            console.print(
+                "[bold yellow]Warning:[/bold yellow] passing API keys via "
+                "CLI arguments exposes them in process listings (ps aux). "
+                "Prefer: export ANTHROPIC_API_KEY=...",
+            )
+    if ncbi_api_key:
+        import sys
+        if "--ncbi-api-key" in sys.argv:
+            console.print(
+                "[bold yellow]Warning:[/bold yellow] passing API keys via "
+                "CLI arguments exposes them in process listings (ps aux). "
+                "Prefer: export NCBI_API_KEY=...",
+            )
+
     # 建立專案目錄
     project_dir = make_project_dir(topic, ROOT_DIR)
 
