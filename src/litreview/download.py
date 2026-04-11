@@ -25,7 +25,7 @@ from litreview.config import (
     TEXT_MAX_CHARS,
     TEXT_MIN_VALID_CHARS,
 )
-from litreview.utils import exponential_backoff, save_json
+from litreview.utils import exponential_backoff, safe_resolve, save_json
 
 console = Console()
 
@@ -98,8 +98,8 @@ def _process_one(paper: dict, project_dir: Path) -> dict:
     加入隨機延遲避免觸發 arXiv 封鎖。
     """
     arxiv_id = paper["arxiv_id"]
-    txt_path = project_dir / paper["text_path"]
-    pdf_path = project_dir / "articles" / f"{arxiv_id}.pdf"
+    txt_path = safe_resolve(project_dir, paper["text_path"])
+    pdf_path = safe_resolve(project_dir, f"articles/{arxiv_id}.pdf")
 
     # PubMed 論文不走 arXiv 下載流程
     if arxiv_id.startswith("pmid_"):

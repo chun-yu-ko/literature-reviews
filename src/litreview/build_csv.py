@@ -7,7 +7,12 @@ import pandas as pd
 from rich.console import Console
 
 from litreview.summarize import load_all_summaries
-from litreview.utils import auto_relevance_score, classify_research_method, load_json
+from litreview.utils import (
+    auto_relevance_score,
+    classify_research_method,
+    load_json,
+    safe_resolve,
+)
 
 console = Console()
 
@@ -32,7 +37,7 @@ def _merge_paper(meta: dict, summary: dict | None, project_dir: Path) -> dict:
     arxiv_id = meta["arxiv_id"]
 
     # 讀取全文用於自動評分備援
-    txt_path = project_dir / meta.get("text_path", f"texts/{arxiv_id}.txt")
+    txt_path = safe_resolve(project_dir, meta.get("text_path", f"texts/{arxiv_id}.txt"))
     text_snippet = ""
     if txt_path.exists():
         text_snippet = txt_path.read_text("utf-8", errors="replace")[:5000]

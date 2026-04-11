@@ -7,6 +7,22 @@ import time
 from pathlib import Path
 
 
+def safe_resolve(base_dir: Path, untrusted_path: str) -> Path:
+    """Resolve *untrusted_path* relative to *base_dir* and ensure it stays inside.
+
+    Raises ``ValueError`` if the resolved path escapes *base_dir*.
+    """
+    resolved = (base_dir / untrusted_path).resolve()
+    base_resolved = base_dir.resolve()
+    base_str = str(base_resolved) + "/"
+    if not (resolved == base_resolved or str(resolved).startswith(base_str)):
+        raise ValueError(
+            f"Path traversal detected: '{untrusted_path}' resolves outside "
+            f"project directory '{base_resolved}'"
+        )
+    return resolved
+
+
 def slugify(text: str) -> str:
     """將字串轉為適合目錄名稱的 slug"""
     text = text.lower().strip()
@@ -112,7 +128,7 @@ def setup_logging(project_dir: Path) -> logging.Logger:
 
     log_path = project_dir / LOG_FILENAME
     logger = logging.getLogger("litreview")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 
     # 避免重複加 handler（多次呼叫時）
     if not logger.handlers:
