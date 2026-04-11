@@ -58,6 +58,8 @@ def extract_arxiv_id(url: str) -> str | None:
     patterns = [
         r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})(?:v\d+)?",   # 新格式
         r"arxiv\.org/(?:abs|pdf)/([a-z\-]+/\d{7})(?:v\d+)?",   # 舊格式 cs/0612056
+        r"export\.arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})(?:v\d+)?",  # export 子網域
+        r"ar5iv\.labs\.arxiv\.org/html/(\d{4}\.\d{4,5})(?:v\d+)?",    # ar5iv HTML
     ]
     for pat in patterns:
         m = re.search(pat, url, re.IGNORECASE)
@@ -81,7 +83,7 @@ def auto_relevance_score(text: str) -> tuple[int, str]:
     score = 1
     if labor_hits >= 2:
         score += 2
-    elif nlp_hits >= 5:
+    if nlp_hits >= 5:
         score += 1
     if nlp_hits >= 2:
         score += 1
@@ -97,7 +99,8 @@ def classify_research_method(text: str) -> str:
         return "文獻回顧"
     if any(kw in tl for kw in ["theorem", "proof", "lemma", "proposition"]):
         return "理論"
-    if any(kw in tl for kw in ["experiment", "empirical", "benchmark", "evaluation", "dataset"]):
+    exp_kws = ["experiment", "empirical", "benchmark", "evaluation", "dataset"]
+    if any(kw in tl for kw in exp_kws):
         return "實驗研究"
     return "方法論"
 

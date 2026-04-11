@@ -19,6 +19,22 @@ from litreview.utils import (
 
 console = Console()
 
+
+def _extract_json_block(text: str) -> str:
+    """從可能包含 markdown code block 的文字中提取 JSON 內容"""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        # 找到第一個 ``` 之後的內容，到最後一個 ``` 之前
+        first_newline = stripped.find("\n")
+        if first_newline == -1:
+            return stripped
+        last_fence = stripped.rfind("```", first_newline)
+        if last_fence > first_newline:
+            return stripped[first_newline + 1:last_fence].strip()
+        return stripped[first_newline + 1:].strip()
+    return stripped
+
+
 SYSTEM_PROMPT = """\
 你是一位學術文獻分析專家，擅長多領域文獻的結構化摘要與評估。
 請根據提供的論文全文，以繁體中文輸出結構化摘要。
@@ -90,18 +106,18 @@ def _call_claude(
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = msg.content[0].text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
+            raw = _extract_json_block(raw)
             result = json.loads(raw)
             # 相容舊欄位名稱 relevance_to_labor_market_nlp
-            if "relevance_to_topic" not in result and "relevance_to_labor_market_nlp" in result:
-                result["relevance_to_topic"] = result.pop("relevance_to_labor_market_nlp")
+            old_key = "relevance_to_labor_market_nlp"
+            if "relevance_to_topic" not in result and old_key in result:
+                result["relevance_to_topic"] = result.pop(old_key)
             return result
         except json.JSONDecodeError:
             console.print(
-                f"[yellow]JSON 解析失敗（{paper['arxiv_id']}），重試 {attempt+1}/3[/yellow]"
+                "[yellow]JSON 解析失敗"
+                f"（{paper['arxiv_id']}），"
+                f"重試 {attempt+1}/3[/yellow]"
             )
             time.sleep(2 ** attempt)
         except anthropic.RateLimitError:
@@ -206,7 +222,10 @@ def run_summarize(
     console.print(
         f"待摘要：{len(to_process)} 篇，已快取：{len(cached_results)} 篇"
     )
-    logger.info(f"Phase 3 開始：待處理 {len(to_process)} 篇，快取 {len(cached_results)} 篇")
+    logger.info(
+        f"Phase 3 開始：待處理 {len(to_process)} 篇，"
+        f"快取 {len(cached_results)} 篇",
+    )
 
     results = list(cached_results)
 
@@ -234,7 +253,15 @@ def run_summarize(
                 for paper in to_process
             }
             for future in as_completed(futures):
-                summary = future.result()
+                try:
+                    summary = future.result()
+                except Exception as e:
+                    paper = futures[future]
+                    aid = paper.get('arxiv_id', '?')
+                    get_logger().warning(
+                        f"摘要處理失敗（{aid}）：{e}",
+                    )
+                    summary = None
                 if summary:
                     results.append(summary)
                 progress.advance(task)

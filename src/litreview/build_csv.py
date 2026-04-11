@@ -1,6 +1,5 @@
 """Phase 4：建構 study.csv + articles.csv"""
 
-import csv
 from pathlib import Path
 
 import pandas as pd
@@ -50,7 +49,10 @@ def _merge_paper(meta: dict, summary: dict | None, project_dir: Path) -> dict:
             or 0
         )
         score_source = summary.get("score_source", "ai")
-        research_method = summary.get("research_method") or classify_research_method(text_snippet)
+        research_method = (
+            summary.get("research_method")
+            or classify_research_method(text_snippet)
+        )
     else:
         # 備援：關鍵字自動評分
         score, score_source = auto_relevance_score(text_snippet)
@@ -64,7 +66,9 @@ def _merge_paper(meta: dict, summary: dict | None, project_dir: Path) -> dict:
         "year": meta.get("year", 0),
         "cited_by": meta.get("cited_by", 0),
         "search_category": meta.get("search_category", ""),
-        "all_categories": ", ".join(meta.get("all_categories", [meta.get("search_category", "")])),
+        "all_categories": ", ".join(
+            meta.get("all_categories", [meta.get("search_category", "")]),
+        ),
         "search_query": meta.get("search_query", ""),
         "topic": meta.get("topic", ""),
         "field": meta.get("field", ""),
@@ -72,14 +76,20 @@ def _merge_paper(meta: dict, summary: dict | None, project_dir: Path) -> dict:
         "pdf_url": meta.get("pdf_url", ""),
         "text_length": meta.get("text_length", 0),
         # AI 摘要欄位
-        "category": summary.get("category", meta.get("search_category", "")) if summary else meta.get("search_category", ""),
+        "category": (
+            summary.get("category", meta.get("search_category", ""))
+            if summary
+            else meta.get("search_category", "")
+        ),
         "subcategory": summary.get("subcategory", "") if summary else "",
         "research_method": research_method,
-        "key_contribution": (summary.get("key_contribution", "") if summary else "")[:600],
+        "key_contribution": (
+            (summary.get("key_contribution", "") if summary else "")[:600]
+        ),
         "methodology": summary.get("methodology", "") if summary else "",
         "key_findings": summary.get("key_findings", "") if summary else "",
         "limitations": summary.get("limitations", "") if summary else "",
-        "relevance_score": str(score),
+        "relevance_score": score,
         "relevance_note": summary.get("relevance_note", "") if summary else "",
         "score_source": score_source,
     }
@@ -124,9 +134,12 @@ def run_build_csv(project_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         df_study.to_excel(writer, sheet_name="study", index=False)
         df_articles.to_excel(writer, sheet_name="articles", index=False)
 
-    console.print(f"[bold green]已輸出：[/bold green]")
+    console.print("[bold green]已輸出：[/bold green]")
     console.print(f"  study.csv    → {len(df_study)} 筆 × {len(df_study.columns)} 欄")
-    console.print(f"  articles.csv → {len(df_articles)} 筆 × {len(df_articles.columns)} 欄")
-    console.print(f"  articles.xlsx（雙 sheet）")
+    console.print(
+        f"  articles.csv → {len(df_articles)} 筆"
+        f" × {len(df_articles.columns)} 欄",
+    )
+    console.print("  articles.xlsx（雙 sheet）")
 
     return df_study, df_articles

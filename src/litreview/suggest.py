@@ -11,6 +11,21 @@ from litreview.utils import get_logger
 
 console = Console()
 
+
+def _extract_json_block(text: str) -> str:
+    """從可能包含 markdown code block 的文字中提取 JSON 內容"""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        first_newline = stripped.find("\n")
+        if first_newline == -1:
+            return stripped
+        last_fence = stripped.rfind("```", first_newline)
+        if last_fence > first_newline:
+            return stripped[first_newline + 1:last_fence].strip()
+        return stripped[first_newline + 1:].strip()
+    return stripped
+
+
 _SYSTEM_PROMPT = """\
 你是一位學術文獻分析專家，擅長識別研究主題的知識空白與延伸方向。
 根據提供的文獻資訊，分析其中反覆出現的方法、概念與術語，提出應補充搜尋的關鍵字。
@@ -82,7 +97,7 @@ def run_suggest(
     paper_list = "\n".join(paper_lines)
     prompt = _USER_TEMPLATE.format(
         topic=topic,
-        n_papers=len(papers),
+        n_papers=len(paper_lines),
         paper_list=paper_list,
     )
 
@@ -98,10 +113,7 @@ def run_suggest(
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = msg.content[0].text.strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
+            raw = _extract_json_block(raw)
             result = json.loads(raw)
             break
         except json.JSONDecodeError:
