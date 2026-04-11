@@ -128,7 +128,7 @@ def setup_logging(project_dir: Path) -> logging.Logger:
 
     log_path = project_dir / LOG_FILENAME
     logger = logging.getLogger("litreview")
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
 
     # 避免重複加 handler（多次呼叫時）
     if not logger.handlers:
